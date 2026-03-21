@@ -148,6 +148,9 @@ async function fetchUserData(handle, cutoffTime) {
     let contestsSet = new Set();
     let vpsSet = new Set();
 
+    // 关键修改：按时间从早到晚排序提交记录，方便获取“首次 AC”的时间
+    submissions.sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
+
     submissions.forEach(sub => {
       const p = sub.problem;
       if (!p || !p.name) return;
@@ -155,9 +158,27 @@ async function fetchUserData(handle, cutoffTime) {
       const pKey = p.name;
       if (!problemsMap.has(pKey)) {
         const displayPrefix = p.contestId ? `${p.contestId}${p.index} - ` : '';
-        problemsMap.set(pKey, { name: `${displayPrefix}${p.name}`, rating: p.rating || 0, solved: false });
+        problemsMap.set(pKey, { 
+          name: `${displayPrefix}${p.name}`, 
+          rating: p.rating || 0, 
+          solved: false,
+          attempts: 0, // 尝试次数
+          acTime: null // AC时间戳
+        });
       }
-      if (sub.verdict === 'OK') problemsMap.get(pKey).solved = true;
+      
+      let probData = problemsMap.get(pKey);
+      
+      // 只有在未 AC 之前，才增加尝试次数（如果 AC 了以后再交，一般不计入为了 AC 的尝试次数）
+      // 如果你想统计所有提交次数，可以去掉 !probData.solved 的判断
+      if (!probData.solved) {
+          probData.attempts++;
+      }
+
+      if (sub.verdict === 'OK' && !probData.solved) {
+        probData.solved = true;
+        probData.acTime = sub.creationTimeSeconds; // 记录首次 AC 的时间
+      }
 
       const pType = sub.author.participantType;
       if (pType === 'CONTESTANT' || pType === 'OUT_OF_COMPETITION') contestsSet.add(sub.author.contestId);
@@ -206,7 +227,7 @@ async function fetchUserData(handle, cutoffTime) {
   }
 }
 
-// 4. 在嵌入容器中渲染内容 (新增：用户名颜色格式化)
+// 4. 在嵌入容器中渲染内容
 function renderStatContent(results, days) {
   const container = document.getElementById('cf-stat-container');
   
@@ -276,7 +297,24 @@ function renderStatContent(results, days) {
         const liClass = p.solved ? 'cf-solved' : 'cf-unsolved';
         const statusText = p.solved ? '<span class="status">[解决]</span>' : '<span class="status">[未解决]</span>';
         const ratingText = p.rating > 0 ? `(Rating: ${p.rating})` : `(无Rating)`;
-        html += `<li class="${liClass}">${statusText} <strong>${p.name}</strong> ${ratingText}</li>`;
+
+        // 格式化尝试次数与 AC 时间
+        const attemptsText = `<span style="color: #666; margin-left: 10px;">(尝试: ${p.attempts} 次)</span>`;
+        let timeText = '';
+        if (p.solved && p.acTime) {
+            const dateObj = new Date(p.acTime * 1000);
+            // 格式化为 YYYY-MM-DD HH:mm
+            const year = dateObj.getFullYear();
+            const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+            const day = dateObj.getDate().toString().padStart(2, '0');
+            const hours = dateObj.getHours().toString().padStart(2, '0');
+            const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+            
+            const timeStr = `${year}-${month}-${day} ${hours}:${minutes}`;
+            timeText = `<span style="color: #00A900; margin-left: 10px;">[AC于: ${timeStr}]</span>`;
+        }
+
+        html += `<li class="${liClass}">${statusText} <strong>${p.name}</strong> ${ratingText} ${attemptsText} ${timeText}</li>`;
       });
       html += `</ul>`;
     }
@@ -300,7 +338,7 @@ function renderCharts(results) {
   chartInstances.forEach(c => c.destroy());
   chartInstances = [];
 
-  // 图表 0: 历史总过题数 (新增的柱状图)
+  // 图表 0: 历史总过题数
   const ctxHist = document.getElementById('cf-chart-historical-solved');
   if (ctxHist) {
     // 预设不同的颜色数组
