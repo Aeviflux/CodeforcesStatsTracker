@@ -82,15 +82,42 @@ async function openStatPage() {
   }
 }
 
-// 3. 获取用户数据 (新增：获取当前 Rating)
+// 3. 获取用户数据 (根据官方实际 HTML 结构精准解析)
 async function fetchUserData(handle, cutoffTime) {
   try {
-    const [statusRes, ratingRes] = await Promise.all([
+    const [statusRes, ratingRes, profileHtml] = await Promise.all([
       fetch(`https://codeforces.com/api/user.status?handle=${handle}`).then(r => r.json()),
-      fetch(`https://codeforces.com/api/user.rating?handle=${handle}`).then(r => r.json())
+      fetch(`https://codeforces.com/api/user.rating?handle=${handle}`).then(r => r.json()),
+      fetch(`https://codeforces.com/profile/${handle}`).then(r => r.text())
     ]);
 
     if (statusRes.status !== 'OK' || ratingRes.status !== 'OK') return null;
+
+    // --- 针对提供的 HTML 结构解析历史总题数 ---
+    let historicalSolvedCount = 0;
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(profileHtml, 'text/html');
+    
+    // 找到所有带有特定类名的描述节点
+    const descriptions = Array.from(doc.querySelectorAll('._UserActivityFrame_counterDescription'));
+    
+    // 找出包含 "solved for all time" 的那个节点
+    const targetDesc = descriptions.find(el => el.textContent.includes('solved for all time'));
+    
+    if (targetDesc && targetDesc.previousElementSibling) {
+      // 获取它前面的兄弟节点的内容（即包含 "367 problems" 的 div）
+      const valueText = targetDesc.previousElementSibling.textContent;
+      // 使用正则 \D 剔除非数字字符，只保留数字并转换为整数
+      historicalSolvedCount = parseInt(valueText.replace(/\D/g, ''), 10) || 0;
+    } else {
+      // 兜底正则方案，防止因 DOM 结构微调导致解析失败
+      const match = profileHtml.match(/>\s*(\d+)\s*problems\s*<\/div>\s*<div[^>]*>[\s\S]*?solved for all time/i);
+      if (match && match[1]) {
+        historicalSolvedCount = parseInt(match[1], 10);
+      }
+    }
+    // ----------------------------------------
 
     const submissions = statusRes.result.filter(sub => sub.creationTimeSeconds >= cutoffTime);
     let totalSubs = submissions.length;
@@ -100,10 +127,12 @@ async function fetchUserData(handle, cutoffTime) {
 
     submissions.forEach(sub => {
       const p = sub.problem;
-      if (!p || !p.contestId) return;
-      const pKey = `${p.contestId}${p.index}`;
+      if (!p || !p.name) return;
+      
+      const pKey = p.name;
       if (!problemsMap.has(pKey)) {
-        problemsMap.set(pKey, { name: `${p.contestId}${p.index} - ${p.name}`, rating: p.rating || 0, solved: false });
+        const displayPrefix = p.contestId ? `${p.contestId}${p.index} - ` : '';
+        problemsMap.set(pKey, { name: `${displayPrefix}${p.name}`, rating: p.rating || 0, solved: false });
       }
       if (sub.verdict === 'OK') problemsMap.get(pKey).solved = true;
 
@@ -132,21 +161,20 @@ async function fetchUserData(handle, cutoffTime) {
 
     const avgRating = ratedSolvedCount > 0 ? Math.round(totalRating / ratedSolvedCount) : 0;
     const history = ratingRes.result; 
-    
-    // 获取当前最新 Rating（如果有参加过比赛的话）
     const currentRating = history.length > 0 ? history[history.length - 1].newRating : 0;
 
     return { 
       handle, 
       totalSubs, 
-      solvedCount, 
+      solvedCount,
+      historicalSolvedCount, 
       avgRating, 
       maxRating,
       contests: contestsSet.size, 
       vps: vpsSet.size, 
       problemList,
       ratingHistory: history,
-      currentRating // 将当前 Rating 传递给渲染层
+      currentRating
     };
   } catch (e) {
     console.error(e);
@@ -234,7 +262,7 @@ function renderStatContent(results, days) {
   html += `</br><h2>整体数据统计</h2>
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-total-problems"></canvas></div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
     </div>
   `;
 
@@ -247,27 +275,31 @@ function renderCharts(results) {
   chartInstances.forEach(c => c.destroy());
   chartInstances = [];
 
-  // --- 图表 0: 尝试的总题数 (柱状图) ---
-  const ctxTotal = document.getElementById('cf-chart-total-problems');
-  if (ctxTotal) {
-    chartInstances.push(new Chart(ctxTotal.getContext('2d'), {
+  // 图表 0: 历史总过题数 (新增的柱状图)
+  const ctxHist = document.getElementById('cf-chart-historical-solved');
+  if (ctxHist) {
+    // 预设不同的颜色数组
+    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+    const bgColors = results.map((_, i) => colors[i % colors.length]);
+
+    chartInstances.push(new Chart(ctxHist.getContext('2d'), {
       type: 'bar',
       data: {
-        labels: results.map(r => r.handle),
-        datasets: [
-          { 
-            label: '尝试的总题数 (去重后)', 
-            data: results.map(r => r.problemList.length), 
-            backgroundColor: '#36A2EB', // 蓝色柱子
-            borderColor: '#36A2EB',
-            borderWidth: 1
-          }
-        ]
+        labels: results.map(r => r.handle), // X轴为各个用户名
+        datasets: [{
+          label: '历史总过题数',
+          data: results.map(r => r.historicalSolvedCount),
+          backgroundColor: bgColors,
+          borderWidth: 1
+        }]
       },
-      options: { 
-        responsive: true, 
-        plugins: { title: { display: true, text: '尝试的总题数统计' } },
-        scales: { y: { beginAtZero: true } } 
+      options: {
+        responsive: true,
+        plugins: { 
+          title: { display: true, text: '历史总过题数统计 (注册至今)' },
+          legend: { display: false } // 因为每个柱子都代表不同的用户，隐藏顶部图例更美观
+        },
+        scales: { y: { beginAtZero: true } }
       }
     }));
   }
