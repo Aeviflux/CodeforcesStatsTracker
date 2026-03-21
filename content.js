@@ -55,7 +55,15 @@ async function openStatPage() {
     const days = result.cfDays || 7;
     const handles = handlesStr.split(',').map(h => h.trim()).filter(h => h.length > 0);
 
-    const cutoffTime = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
+    // 获取当天的本地时间凌晨 00:00:00
+    const targetDate = new Date();
+    targetDate.setHours(0, 0, 0, 0);
+    // 往前推算，包含今天在内一共 days 天的 0 点作为起点
+    targetDate.setDate(targetDate.getDate() - days + 1);
+    
+    // 生成标准的 10 位时间戳传给后续的数据过滤
+    const cutoffTime = Math.floor(targetDate.getTime() / 1000);
+    
     const results = [];
 
     for (const handle of handles) {
