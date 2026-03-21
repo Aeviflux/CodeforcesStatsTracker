@@ -266,7 +266,7 @@ function renderCharts(results) {
         responsive: true,
         interaction: { mode: 'nearest', intersect: false },
         plugins: {
-          title: { display: true, text: '全量 Rating 成长曲线 (按参加比赛场次排列)' },
+          title: { display: true, text: '段位成长曲线 (按参加比赛场次排列)' },
           tooltip: {
             callbacks: {
               // 在悬停提示中显示比赛名称
