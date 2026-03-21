@@ -82,7 +82,7 @@ async function openStatPage() {
   }
 }
 
-// 3. 获取用户数据 (新增 ratingHistory)
+// 3. 获取用户数据 (新增：获取当前 Rating)
 async function fetchUserData(handle, cutoffTime) {
   try {
     const [statusRes, ratingRes] = await Promise.all([
@@ -122,7 +122,6 @@ async function fetchUserData(handle, cutoffTime) {
       problemList.push(prob);
       if (prob.solved) {
         solvedCount++;
-        // 统计带 Rating 的题目
         if (prob.rating && prob.rating > 0) {
           totalRating += prob.rating;
           maxRating = Math.max(maxRating, prob.rating);
@@ -132,7 +131,10 @@ async function fetchUserData(handle, cutoffTime) {
     });
 
     const avgRating = ratedSolvedCount > 0 ? Math.round(totalRating / ratedSolvedCount) : 0;
-    const history = ratingRes.result; // 全量历史
+    const history = ratingRes.result; 
+    
+    // 获取当前最新 Rating（如果有参加过比赛的话）
+    const currentRating = history.length > 0 ? history[history.length - 1].newRating : 0;
 
     return { 
       handle, 
@@ -143,7 +145,8 @@ async function fetchUserData(handle, cutoffTime) {
       contests: contestsSet.size, 
       vps: vpsSet.size, 
       problemList,
-      ratingHistory: history 
+      ratingHistory: history,
+      currentRating // 将当前 Rating 传递给渲染层
     };
   } catch (e) {
     console.error(e);
@@ -151,10 +154,28 @@ async function fetchUserData(handle, cutoffTime) {
   }
 }
 
-// 4. 在嵌入容器中渲染表格、图表和列表
+// 4. 在嵌入容器中渲染内容 (新增：用户名颜色格式化)
 function renderStatContent(results, days) {
   const container = document.getElementById('cf-stat-container');
   
+  // 辅助函数：根据 Rating 格式化用户名 HTML
+  const formatHandle = (handle, rating) => {
+    if (rating >= 3000) {
+      // Legendary Grandmaster: 首字母黑色，其余红色
+      return `<span style="color: black; font-weight: bold;">${handle[0]}</span><span style="color: red; font-weight: bold;">${handle.slice(1)}</span>`;
+    }
+    
+    let color = '#808080'; // Newbie 或 Unrated
+    if (rating >= 1200 && rating < 1400) color = '#008000';      // Pupil
+    else if (rating >= 1400 && rating < 1600) color = '#03A89E'; // Specialist
+    else if (rating >= 1600 && rating < 1900) color = '#0000FF'; // Expert
+    else if (rating >= 1900 && rating < 2100) color = '#AA00AA'; // Candidate Master
+    else if (rating >= 2100 && rating < 2400) color = '#FF8C00'; // Master / IM
+    else if (rating >= 2400) color = '#FF0000';                  // Grandmaster+
+
+    return `<span style="color: ${color}; font-weight: bold;">${handle}</span>`;
+  };
+
   let html = `<h2>最近 ${days} 天数据统计</h2>
     <table class="cf-stat-table">
       <thead><tr>
@@ -169,19 +190,21 @@ function renderStatContent(results, days) {
       <tbody>`;
   
   results.forEach(res => {
+    // 渲染时调用 formatHandle 为用户名上色
+    const styledHandle = formatHandle(res.handle, res.currentRating);
+
     html += `<tr>
-             <td><a href="/profile/${res.handle}" target="_blank"><strong>${res.handle}</strong></a></td>
+             <td><a href="/profile/${res.handle}" target="_blank" style="text-decoration: none;">${styledHandle}</a></td>
              <td>${res.solvedCount}</td>
              <td>${res.totalSubs}</td>
-             <td>${res.avgRating}</td>
-             <td>${res.maxRating}</td>
+             <td>${res.avgRating || 0}</td>
+             <td>${res.maxRating || 0}</td>
              <td>${res.contests}</td>
              <td>${res.vps}</td>
              </tr>`;
   });
   html += `</tbody></table>`;
 
-  // 增加第三个散点图的容器
   html += `
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-sub"></canvas></div>
@@ -192,7 +215,8 @@ function renderStatContent(results, days) {
 
   html += `<div class="cf-problem-list"><h3>详细问题列表</h3>`;
   results.forEach(res => {
-    html += `<h4>${res.handle}</h4>`;
+    // 问题列表的标题也同步上色
+    html += `<h4>${formatHandle(res.handle, res.currentRating)}</h4>`;
     if (res.problemList.length === 0) {
       html += `<p>无记录</p>`;
     } else {
@@ -209,7 +233,6 @@ function renderStatContent(results, days) {
   html += `</div>`;
 
   container.innerHTML = html;
-  
   setTimeout(() => renderCharts(results), 0);
 }
 
