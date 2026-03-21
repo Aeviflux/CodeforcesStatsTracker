@@ -249,7 +249,7 @@ function renderStatContent(results, days) {
     return `<span style="color: ${color}; font-weight: bold;">${handle}</span>`;
   };
 
-  let html = `<h2>最近 ${days} 天数据统计</h2>
+  let html = `<h2>最近 ${days} 天的数据统计</h2>
     <table class="cf-stat-table">
       <thead><tr>
         <th>用户</th>
@@ -278,17 +278,11 @@ function renderStatContent(results, days) {
   });
   html += `</tbody></table>`;
 
-  // 详细信息气泡图
-  html += `
-    <div class="cf-charts-container" style="margin-top: 20px; margin-bottom: 20px;">
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-solved-bubble"></canvas></div>
-    </div>
-  `;
-
   html += `
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-sub"></canvas></div>
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-scatter"></canvas></div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-solved"></canvas></div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-solved-bubble"></canvas></div>
     </div>
   `;
 
@@ -328,7 +322,7 @@ function renderStatContent(results, days) {
   });
   html += `</div>`;
 
-  html += `</br><h2>整体数据统计</h2>
+  html += `</br><h2>从注册到目前为止的数据统计</h2>
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
@@ -457,7 +451,7 @@ function renderCharts(results) {
     }));
   }
 
-  // 图表: 提交与解决对比 (保持不变)
+  // 图表: 提交与解决对比
   const ctx1 = document.getElementById('cf-chart-sub');
   if (ctx1) {
     chartInstances.push(new Chart(ctx1.getContext('2d'), {
@@ -532,114 +526,91 @@ function renderCharts(results) {
     }));
   }
 
-  // 图表: 题目 Rating 同心饼图 (按段位渐变)
-  const ctx3 = document.getElementById('cf-chart-scatter');
+  // 图表: 各用户解决题目 Rating 分布 (堆叠柱状图)
+  const ctx3 = document.getElementById('cf-chart-solved');
   if (ctx3) {
+    // 关键修改 1：强制调高图表容器的高度，让柱子更高更直观
+    ctx3.parentElement.style.height = '450px'; 
+
+    // 关键修改 2：去除 rating > 0 的过滤，把无 Rating (记为0) 的也包含进来
     const validPieResults = results.filter(res => 
-      res.problemList.some(p => p.solved && p.rating > 0)
+      res.problemList.some(p => p.solved) 
     );
 
     if (validPieResults.length > 0) {
+      // 1. 收集所有出现过的 Rating 分数
       let allRatings = new Set();
       validPieResults.forEach(res => {
         res.problemList.forEach(p => {
-          if (p.solved && p.rating > 0) allRatings.add(p.rating);
+          if (p.solved) allRatings.add(p.rating || 0); // 无 Rating 记为 0
         });
       });
       
+      // 排序，0 会自然排在第一位（即 800 的前面）
       const sortedRatings = Array.from(allRatings).sort((a, b) => a - b);
-      const pieLabels = sortedRatings.map(r => r + ' 分');
+      
+      // 映射 X 轴标签，把 0 转换为 "无Rating"
+      const barLabels = sortedRatings.map(r => r === 0 ? '无Rating' : r + ' 分');
 
-      // 核心修改：动态渐变颜色计算函数
-      const getCfGradientColor = (rating) => {
-        // 向下取整到百位，如 1450 -> 1400
-        let r = Math.floor(rating / 100) * 100;
-        
-        let baseColor, maxR;
-        let stepSize = 0.20; // 同一段位内，每低100分混入 20% 的白色
+      // 预设高区分度的用户颜色
+      const userColors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900', '#FFB6C1'];
 
-        // 根据 CF 段位划分基本颜色和该段位的“封顶分数”(maxR)
-        if (r < 1200) {
-            baseColor = [128, 128, 128]; // 灰色 (Newbie)
-            maxR = 1100;
-        } else if (r < 1400) {
-            baseColor = [0, 128, 0];     // 绿色 (Pupil)
-            maxR = 1300;
-        } else if (r < 1600) {
-            baseColor = [3, 168, 158];   // 青色 (Specialist)
-            maxR = 1500;
-        } else if (r < 1900) {
-            baseColor = [0, 0, 255];     // 蓝色 (Expert)
-            maxR = 1800;
-        } else if (r < 2100) {
-            baseColor = [170, 0, 170];   // 紫色 (Candidate Master)
-            maxR = 2000;
-        } else if (r < 2400) {
-            baseColor = [255, 140, 0];   // 橙色 (Master/IM)
-            maxR = 2300;
-        } else {
-            baseColor = [255, 0, 0];     // 红色 (Grandmaster+)
-            maxR = 3000;                 // 设定3000为纯红
-            stepSize = 0.08;             // 红色跨度大，渐变幅度小一点
-            if (r > maxR) r = maxR;
-        }
-
-        // 计算当前分数距离该段位最高分差了多少个 100 分
-        let diffSteps = Math.max(0, (maxR - r) / 100);
-        
-        // 限制最多变浅 80%，防止变成纯白色看不见
-        let lightenFactor = Math.min(0.8, diffSteps * stepSize); 
-
-        // RGB 混色算法：原色 + (白色 - 原色) * 浅化比例
-        let R = Math.round(baseColor[0] + (255 - baseColor[0]) * lightenFactor);
-        let G = Math.round(baseColor[1] + (255 - baseColor[1]) * lightenFactor);
-        let B = Math.round(baseColor[2] + (255 - baseColor[2]) * lightenFactor);
-
-        return `rgb(${R}, ${G}, ${B})`;
-      };
-
-      // 为每一个出现的分数生成其专属的渐变色
-      const bgColors = sortedRatings.map(r => getCfGradientColor(r));
-
-      const pieDatasets = validPieResults.map((res) => {
+      // 2. 为每个用户构建数据集
+      const barDatasets = validPieResults.map((res, index) => {
         const counts = {};
         res.problemList.forEach(p => {
-          if (p.solved && p.rating > 0) {
-            counts[p.rating] = (counts[p.rating] || 0) + 1;
+          if (p.solved) {
+            const rVal = p.rating || 0; // 同样将无 Rating 记为 0
+            counts[rVal] = (counts[rVal] || 0) + 1;
           }
         });
         
+        // 按照 X 轴的 Rating 顺序填入该用户的做题数量，没有则补 0
         const data = sortedRatings.map(r => counts[r] || 0);
 
         return {
           label: res.handle,
           data: data,
-          backgroundColor: bgColors,
-          borderWidth: 1,
-          borderColor: '#ffffff'
+          backgroundColor: userColors[index % userColors.length],
+          borderWidth: 1
         };
       });
 
       chartInstances.push(new Chart(ctx3.getContext('2d'), {
-        type: 'pie', 
+        type: 'bar', 
         data: {
-          labels: pieLabels,
-          datasets: pieDatasets
+          labels: barLabels,
+          datasets: barDatasets
         },
         options: {
           responsive: true,
-          maintainAspectRatio: false, 
+          maintainAspectRatio: false, // 允许图表拉伸，配合前面的 450px 高度
           plugins: { 
             title: { 
               display: true, 
-              text: '各用户解决题目 Rating 分布 (每100分递进，最深色为该段位标准色)' 
+              text: '近期解决题目 Rating 分布统计' 
             },
             tooltip: {
+              mode: 'index', // 鼠标悬浮时展示该分数段的所有用户做题量
+              intersect: false,
               callbacks: {
                 label: function(context) {
-                  return `${context.dataset.label} - ${context.label}: 解决了 ${context.raw} 题`;
+                  // 过滤掉数量为 0 的记录，让悬浮框更清爽
+                  if (context.raw === 0) return null;
+                  return `${context.dataset.label}: 解决了 ${context.raw} 题`;
                 }
               }
+            }
+          },
+          scales: {
+            x: {
+              stacked: true,
+              title: { display: true, text: '题目 Rating' }
+            },
+            y: {
+              stacked: true,
+              title: { display: true, text: '解决数量' },
+              ticks: { stepSize: 1 }
             }
           }
         }
