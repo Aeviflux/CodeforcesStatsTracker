@@ -278,6 +278,13 @@ function renderStatContent(results, days) {
   });
   html += `</tbody></table>`;
 
+  // 详细信息气泡图
+  html += `
+    <div class="cf-charts-container" style="margin-top: 20px; margin-bottom: 20px;">
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-solved-bubble"></canvas></div>
+    </div>
+  `;
+
   html += `
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-sub"></canvas></div>
@@ -338,7 +345,90 @@ function renderCharts(results) {
   chartInstances.forEach(c => c.destroy());
   chartInstances = [];
 
-  // 图表 0: 历史总过题数
+  // 图表: 近期解决题目明细 (气泡图) 
+  const ctxSolvedBubble = document.getElementById('cf-chart-solved-bubble');
+  if (ctxSolvedBubble) {
+    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+    
+    // 关键修改 1：增加一个变量用于记录全场最高的尝试次数
+    let maxAttempts = 0; 
+
+    const bubbleDatasets = results.map((res, index) => {
+      const dataPoints = [];
+      res.problemList.forEach(p => {
+        if (p.solved && p.acTime) {
+          const isUnrated = !p.rating || p.rating === 0;
+          const ratingVal = isUnrated ? 1000 : p.rating;
+          
+          // 更新最高尝试次数
+          if (p.attempts > maxAttempts) maxAttempts = p.attempts;
+
+          dataPoints.push({
+            x: p.acTime * 1000, 
+            y: p.attempts,      
+            r: Math.max(4, ratingVal / 80), 
+            rawRating: isUnrated ? '无 (按1000算)' : p.rating,
+            name: p.name,
+            isUnrated: isUnrated
+          });
+        }
+      });
+
+      const color = colors[index % colors.length];
+
+      return {
+        label: res.handle,
+        data: dataPoints,
+        backgroundColor: dataPoints.map(d => d.isUnrated ? 'transparent' : color + '80'),
+        borderColor: color,
+        borderWidth: 2,
+        hoverBackgroundColor: color
+      };
+    });
+
+    chartInstances.push(new Chart(ctxSolvedBubble.getContext('2d'), {
+      type: 'bubble',
+      data: { datasets: bubbleDatasets },
+      options: {
+        responsive: true,
+        plugins: {
+          title: { display: true, text: '近期解决题目明细 (X轴: AC时间, Y轴: 尝试次数, 气泡大小: Rating, 空心环: 无Rating)' },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const point = context.raw;
+                const dateObj = new Date(point.x);
+                const timeStr = `${dateObj.getFullYear()}-${(dateObj.getMonth() + 1).toString().padStart(2, '0')}-${dateObj.getDate().toString().padStart(2, '0')} ${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`;
+                return `${context.dataset.label} | ${point.name} | Rating: ${point.rawRating} | 尝试: ${point.y}次 | AC于: ${timeStr}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'AC 时间 (每小时间隔)' },
+            ticks: {
+              // 关键修改 2：强制 X 轴网格线的间隔为 1 小时 (3600秒 * 1000毫秒)
+              stepSize: 3600 * 1000, 
+              callback: function(value) {
+                const dateObj = new Date(value);
+                return `${(dateObj.getMonth() + 1).toString().padStart(2, '0')}-${dateObj.getDate().toString().padStart(2, '0')} ${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}`;
+              }
+            }
+          },
+          y: {
+            title: { display: true, text: '尝试次数 (含AC当次)' },
+            beginAtZero: true,
+            // 关键修改 3：将 Y 轴的最高点设置为 最大尝试次数 + 1，留出上方空间
+            suggestedMax: maxAttempts + 1, 
+            ticks: { stepSize: 1 }
+          }
+        }
+      }
+    }));
+  }
+
+  // 图表: 历史总过题数
   const ctxHist = document.getElementById('cf-chart-historical-solved');
   if (ctxHist) {
     // 预设不同的颜色数组
@@ -367,7 +457,7 @@ function renderCharts(results) {
     }));
   }
 
-  // --- 图表 1: 提交与解决对比 (保持不变) ---
+  // 图表: 提交与解决对比 (保持不变)
   const ctx1 = document.getElementById('cf-chart-sub');
   if (ctx1) {
     chartInstances.push(new Chart(ctx1.getContext('2d'), {
@@ -383,7 +473,7 @@ function renderCharts(results) {
     }));
   }
 
-  // --- 图表 2: 全量段位变化图 (折线图) ---
+  // 图表: 全量段位变化图 (折线图)
   const ctx2 = document.getElementById('cf-chart-rating');
   if (ctx2) {
     // 找出所有用户中参加比赛最多的场数，用于生成 X 轴标签
@@ -442,7 +532,7 @@ function renderCharts(results) {
     }));
   }
 
-  // 图表 3: 题目 Rating 同心饼图 (按段位渐变)
+  // 图表: 题目 Rating 同心饼图 (按段位渐变)
   const ctx3 = document.getElementById('cf-chart-scatter');
   if (ctx3) {
     const validPieResults = results.filter(res => 
@@ -559,7 +649,7 @@ function renderCharts(results) {
     }
   }
 
-  // 图表 4: 历史总完成题目的 Rating 分布 (雷达图)
+  // 图表: 历史总完成题目的 Rating 分布 (雷达图)
   const ctxRadar = document.getElementById('cf-chart-radar');
   if (ctxRadar) {
     // 1. 收集所有用户做过的所有唯一 Rating，作为雷达图的顶点标签
