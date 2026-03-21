@@ -63,7 +63,7 @@ async function openStatPage() {
     
     // 生成标准的 10 位时间戳传给后续的数据过滤
     const cutoffTime = Math.floor(targetDate.getTime() / 1000);
-    
+
     const results = [];
 
     for (const handle of handles) {
@@ -114,7 +114,7 @@ async function fetchUserData(handle, cutoffTime) {
     const targetDesc = descriptions.find(el => el.textContent.includes('solved for all time'));
     
     if (targetDesc && targetDesc.previousElementSibling) {
-      // 获取它前面的兄弟节点的内容（即包含 "367 problems" 的 div）
+      // 获取它前面的兄弟节点的内容（即包含 "123 problems" 的 div）
       const valueText = targetDesc.previousElementSibling.textContent;
       // 使用正则 \D 剔除非数字字符，只保留数字并转换为整数
       historicalSolvedCount = parseInt(valueText.replace(/\D/g, ''), 10) || 0;
@@ -125,7 +125,22 @@ async function fetchUserData(handle, cutoffTime) {
         historicalSolvedCount = parseInt(match[1], 10);
       }
     }
-    // ----------------------------------------
+
+    // --- 统计全历史记录中各 Rating 的过题数 ---
+    let historicalSolvedSet = new Set();
+    let historicalRatingsCount = {}; // 用于存储各 Rating 的数量分布
+
+    statusRes.result.forEach(sub => {
+      if (sub.verdict === 'OK' && sub.problem && sub.problem.name) {
+        if (!historicalSolvedSet.has(sub.problem.name)) {
+          historicalSolvedSet.add(sub.problem.name);
+          // 如果这道题有 Rating，则累加到对应的 Rating 统计中
+          if (sub.problem.rating && sub.problem.rating > 0) {
+            historicalRatingsCount[sub.problem.rating] = (historicalRatingsCount[sub.problem.rating] || 0) + 1;
+          }
+        }
+      }
+    });
 
     const submissions = statusRes.result.filter(sub => sub.creationTimeSeconds >= cutoffTime);
     let totalSubs = submissions.length;
@@ -176,6 +191,7 @@ async function fetchUserData(handle, cutoffTime) {
       totalSubs, 
       solvedCount,
       historicalSolvedCount, 
+      historicalRatingsCount,
       avgRating, 
       maxRating,
       contests: contestsSet.size, 
@@ -271,6 +287,7 @@ function renderStatContent(results, days) {
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-bubble"></canvas></div>
     </div>
   `;
 
@@ -502,6 +519,86 @@ function renderCharts(results) {
     } else {
       ctx3.parentElement.style.display = 'none';
     }
+  }
+
+  // 图表 4: 历史总完成题目的 Rating 分布 (气泡图)
+  const ctxBubble = document.getElementById('cf-chart-bubble');
+  if (ctxBubble) {
+    // 找到所有用户中单个 Rating 过题数量的最大值，用于控制气泡的最大缩放比例
+    let maxCount = 0;
+    results.forEach(res => {
+      Object.values(res.historicalRatingsCount).forEach(count => {
+        if (count > maxCount) maxCount = count;
+      });
+    });
+
+    // 计算气泡半径的函数：使用平方根缩放，保证气泡面积与过题数成正比。最大气泡半径限制为 25px
+    const scaleRadius = (count) => {
+      if (maxCount === 0) return 3;
+      return Math.max(3, Math.sqrt(count / maxCount) * 25);
+    };
+
+    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+
+    const bubbleDatasets = results.map((res, index) => {
+      const dataPoints = [];
+      for (const [rating, count] of Object.entries(res.historicalRatingsCount)) {
+        dataPoints.push({
+          x: parseInt(rating),       // X 轴：Rating 分数
+          y: index,                  // Y 轴：用户索引（将不同的用户放在不同的高度线上）
+          r: scaleRadius(count),     // 半径：根据过题数计算缩放后的气泡大小
+          rawCount: count            // 原始题数，用于鼠标悬浮时展示
+        });
+      }
+
+      // 颜色后加 '80' 会使其产生 50% 透明度，防止大气泡遮挡小气泡
+      const bgColor = colors[index % colors.length] + '80';
+      const borderColor = colors[index % colors.length];
+
+      return {
+        label: res.handle,
+        data: dataPoints,
+        backgroundColor: bgColor,
+        borderColor: borderColor,
+        borderWidth: 1
+      };
+    });
+
+    chartInstances.push(new Chart(ctxBubble.getContext('2d'), {
+      type: 'bubble',
+      data: { datasets: bubbleDatasets },
+      options: {
+        responsive: true,
+        plugins: { 
+          title: { display: true, text: '全量历史完成题目 Rating 分布 (气泡面积代表题数)' },
+          tooltip: {
+            callbacks: {
+              // 自定义提示框，显示具体的题数而不是半径数值
+              label: function(context) {
+                const point = context.raw;
+                return `${context.dataset.label} - Rating: ${point.x}, 题数: ${point.rawCount}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Rating' },
+            ticks: { stepSize: 100 } // X 轴按 100 分一档显示
+          },
+          y: {
+            title: { display: true, text: '用户' },
+            ticks: {
+              stepSize: 1,
+              // 将 Y 轴原本的数字 0, 1, 2... 替换成对应的用户名
+              callback: function(value) {
+                return results[value] ? results[value].handle : '';
+              }
+            }
+          }
+        }
+      }
+    }));
   }
 }
 
