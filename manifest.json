@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Codeforces Stats Tracker",
+  "version": "1.0",
+  "description": "在CF页面嵌入统计信息，支持记录多个用户的做题、提交、Rating等数据。",
+  "icons": {
+    "16": "img/icon16.png",
+    "48": "img/icon48.png",
+    "128": "img/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "设置 CF 统计参数",
+    "default_icon": {
+      "16": "img/icon16.png",
+      "48": "img/icon48.png",
+      "128": "img/icon128.png"
+    }
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://codeforces.com/api/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["*://codeforces.com/*", "*://www.codeforces.com/*"],
+      "js": ["chart.js", "content.js"],
+      "css": ["content.css"]
+    }
+  ]
+}

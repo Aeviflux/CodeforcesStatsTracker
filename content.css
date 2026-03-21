@@ -1,0 +1,66 @@
+/* 适配 Codeforces 原生风格的容器 */
+#cf-stat-container {
+  padding: 2em;
+  background-color: #fff;
+  border-radius: 5px;
+  border: 1px solid #e1e1e1;
+  box-shadow: 0 0 3px rgba(0,0,0,0.1);
+  margin-bottom: 1em;
+}
+
+#cf-stat-container h2, #cf-stat-container h3, #cf-stat-container h4 {
+  color: #3b5998;
+  border-bottom: 1px solid #e1e1e1;
+  padding-bottom: 5px;
+  margin-bottom: 15px;
+}
+
+.cf-stat-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 30px;
+}
+
+.cf-stat-table th, .cf-stat-table td {
+  border: 1px solid #e1e1e1;
+  padding: 8px;
+  text-align: center;
+}
+
+.cf-stat-table th {
+  background-color: #f5f5f5;
+  font-weight: bold;
+}
+
+.cf-charts-container {
+  display: flex;
+  flex-direction: column; /* 改为 column，让图表上下排列，一行一个 */
+  gap: 30px; /* 增加图表之间的间距 */
+  margin-bottom: 30px;
+}
+
+.cf-chart-wrapper {
+  width: 100%; /* 让每个图表占满整行宽度 */
+  border: 1px solid #e1e1e1;
+  padding: 15px;
+  border-radius: 5px;
+  box-sizing: border-box;
+}
+
+.cf-problem-list ul {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.cf-problem-list li {
+  font-size: 13px;
+  margin-bottom: 6px;
+  padding: 4px;
+  background-color: #f9f9f9;
+  border-left: 4px solid #ccc;
+}
+
+.cf-solved { border-left-color: #00a900 !important; }
+.cf-solved span.status { color: #00a900; font-weight: bold; }
+.cf-unsolved { border-left-color: red !important; }
+.cf-unsolved span.status { color: red; }
