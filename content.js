@@ -208,7 +208,6 @@ function renderStatContent(results, days) {
   html += `
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-sub"></canvas></div>
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-scatter"></canvas></div>
     </div>
   `;
@@ -231,6 +230,12 @@ function renderStatContent(results, days) {
     }
   });
   html += `</div>`;
+
+  html += `</br><h2>整体数据统计</h2>
+    <div class="cf-charts-container">
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
+    </div>
+  `;
 
   container.innerHTML = html;
   setTimeout(() => renderCharts(results), 0);
