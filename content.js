@@ -287,7 +287,7 @@ function renderStatContent(results, days) {
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-bubble"></canvas></div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-radar"></canvas></div>
     </div>
   `;
 
@@ -521,38 +521,32 @@ function renderCharts(results) {
     }
   }
 
-  // 图表 4: 历史总完成题目的 Rating 分布 (气泡图)
-  const ctxBubble = document.getElementById('cf-chart-bubble');
-  if (ctxBubble) {
-    // 找到所有用户中单个 Rating 过题数量的最大值，用于控制气泡的最大缩放比例
-    let maxCount = 0;
+  // 图表 4: 历史总完成题目的 Rating 分布 (雷达图)
+  const ctxRadar = document.getElementById('cf-chart-radar');
+  if (ctxRadar) {
+    // 1. 收集所有用户做过的所有唯一 Rating，作为雷达图的顶点标签
+    let allRatings = new Set();
     results.forEach(res => {
-      Object.values(res.historicalRatingsCount).forEach(count => {
-        if (count > maxCount) maxCount = count;
+      Object.keys(res.historicalRatingsCount).forEach(rating => {
+        allRatings.add(parseInt(rating));
       });
     });
 
-    // 计算气泡半径的函数：使用平方根缩放，保证气泡面积与过题数成正比。最大气泡半径限制为 25px
-    const scaleRadius = (count) => {
-      if (maxCount === 0) return 3;
-      return Math.max(3, Math.sqrt(count / maxCount) * 25);
-    };
+    // 2. 将 Rating 从小到大排序
+    const sortedRatings = Array.from(allRatings).sort((a, b) => a - b);
+    const radarLabels = sortedRatings.map(r => r + '分');
 
     const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
 
-    const bubbleDatasets = results.map((res, index) => {
-      const dataPoints = [];
-      for (const [rating, count] of Object.entries(res.historicalRatingsCount)) {
-        dataPoints.push({
-          x: parseInt(rating),       // X 轴：Rating 分数
-          y: index,                  // Y 轴：用户索引（将不同的用户放在不同的高度线上）
-          r: scaleRadius(count),     // 半径：根据过题数计算缩放后的气泡大小
-          rawCount: count            // 原始题数，用于鼠标悬浮时展示
-        });
-      }
+    // 3. 构建每个用户的数据集
+    const radarDatasets = results.map((res, index) => {
+      // 匹配对应的题数，如果在某个 Rating 没有做过题，则补 0
+      const dataPoints = sortedRatings.map(rating => {
+        return res.historicalRatingsCount[rating] || 0;
+      });
 
-      // 颜色后加 '80' 会使其产生 50% 透明度，防止大气泡遮挡小气泡
-      const bgColor = colors[index % colors.length] + '80';
+      // 雷达图需要较高的透明度，防止多边形互相遮挡导致内部数据不可见 (追加 '33' 表示 20% 透明度)
+      const bgColor = colors[index % colors.length] + '33'; 
       const borderColor = colors[index % colors.length];
 
       return {
@@ -560,41 +554,36 @@ function renderCharts(results) {
         data: dataPoints,
         backgroundColor: bgColor,
         borderColor: borderColor,
-        borderWidth: 1
+        pointBackgroundColor: borderColor,
+        pointBorderColor: '#fff',
+        pointHoverBackgroundColor: '#fff',
+        pointHoverBorderColor: borderColor,
+        borderWidth: 2
       };
     });
 
-    chartInstances.push(new Chart(ctxBubble.getContext('2d'), {
-      type: 'bubble',
-      data: { datasets: bubbleDatasets },
+    chartInstances.push(new Chart(ctxRadar.getContext('2d'), {
+      type: 'radar',
+      data: {
+        labels: radarLabels,
+        datasets: radarDatasets
+      },
       options: {
         responsive: true,
         plugins: { 
-          title: { display: true, text: '全量历史完成题目 Rating 分布 (气泡面积代表题数)' },
+          title: { display: true, text: '全量历史完成题目 Rating 分布 (多边形面积代表广度与数量)' },
           tooltip: {
             callbacks: {
-              // 自定义提示框，显示具体的题数而不是半径数值
               label: function(context) {
-                const point = context.raw;
-                return `${context.dataset.label} - Rating: ${point.x}, 题数: ${point.rawCount}`;
+                return `${context.dataset.label}: 解决了 ${context.raw} 题`;
               }
             }
           }
         },
         scales: {
-          x: {
-            title: { display: true, text: 'Rating' },
-            ticks: { stepSize: 100 } // X 轴按 100 分一档显示
-          },
-          y: {
-            title: { display: true, text: '用户' },
-            ticks: {
-              stepSize: 1,
-              // 将 Y 轴原本的数字 0, 1, 2... 替换成对应的用户名
-              callback: function(value) {
-                return results[value] ? results[value].handle : '';
-              }
-            }
+          r: {
+            angleLines: { display: true },
+            suggestedMin: 0 // 确保雷达图中心点从 0 开始
           }
         }
       }
