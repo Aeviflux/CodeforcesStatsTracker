@@ -234,6 +234,7 @@ function renderStatContent(results, days) {
   html += `</br><h2>整体数据统计</h2>
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-total-problems"></canvas></div>
     </div>
   `;
 
@@ -246,6 +247,31 @@ function renderCharts(results) {
   chartInstances.forEach(c => c.destroy());
   chartInstances = [];
 
+  // --- 图表 0: 尝试的总题数 (柱状图) ---
+  const ctxTotal = document.getElementById('cf-chart-total-problems');
+  if (ctxTotal) {
+    chartInstances.push(new Chart(ctxTotal.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: results.map(r => r.handle),
+        datasets: [
+          { 
+            label: '尝试的总题数 (去重后)', 
+            data: results.map(r => r.problemList.length), 
+            backgroundColor: '#36A2EB', // 蓝色柱子
+            borderColor: '#36A2EB',
+            borderWidth: 1
+          }
+        ]
+      },
+      options: { 
+        responsive: true, 
+        plugins: { title: { display: true, text: '尝试的总题数统计' } },
+        scales: { y: { beginAtZero: true } } 
+      }
+    }));
+  }
+
   // --- 图表 1: 提交与解决对比 (保持不变) ---
   const ctx1 = document.getElementById('cf-chart-sub');
   if (ctx1) {
@@ -254,7 +280,7 @@ function renderCharts(results) {
       data: {
         labels: results.map(r => r.handle),
         datasets: [
-          { label: '总提交数', data: results.map(r => r.totalSubs), borderColor: '#A0A0A0', backgroundColor: '#A0A0A0', fill: false },
+          { label: '总提交数', data: results.map(r => r.totalSubs), borderColor: '#e500f9ff', backgroundColor: '#e500f9ff', fill: false },
           { label: '解决题目数', data: results.map(r => r.solvedCount), borderColor: '#00A900', backgroundColor: '#00A900', fill: false }
         ]
       },
