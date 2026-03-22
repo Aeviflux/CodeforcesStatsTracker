@@ -396,7 +396,16 @@ function renderStatContent(results, days) {
           <canvas id="cf-chart-daily-line"></canvas>
         </div>
       </div>
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-tags-radar"></canvas></div>
+      <div class="cf-chart-wrapper" style="width: 100%; max-width: 100%; margin-top: 20px;">
+        <div style="text-align: center; margin-bottom: 10px;">
+          <label style="font-weight: bold; margin-right: 10px;">显示标签数量:</label>
+          <input type="number" id="tags-count-input" value="12" min="3" max="50" style="width: 60px; padding: 4px; text-align: center;">
+          <button id="update-tags-btn" style="padding: 4px 10px; margin-left: 10px; cursor: pointer; background-color: #1890ff; color: white; border: none; border-radius: 4px;">更新</button>
+        </div>
+        <div style="height: 650px; width: 100%;">
+           <canvas id="cf-chart-tags-radar"></canvas>
+        </div>
+      </div>
     </div>
   `;
 
@@ -935,68 +944,92 @@ function renderCharts(results) {
   // 图：算法能力雷达图 
   const ctxTagsRadar = document.getElementById('cf-chart-tags-radar');
   if (ctxTagsRadar) {
-    // 1. 汇总所有用户的标签数据，找出最常做的 Top 12 标签（避免雷达图太拥挤）
-    let globalTagsCount = {};
-    results.forEach(res => {
-      Object.entries(res.historicalTagsCount).forEach(([tag, count]) => {
-        globalTagsCount[tag] = (globalTagsCount[tag] || 0) + count;
+    let tagsRadarChart = null; // 用于存储当前雷达图实例，方便销毁重绘
+
+    const renderTagsRadar = (tagsCount) => {
+      if (tagsRadarChart) {
+        tagsRadarChart.destroy();
+        const idx = chartInstances.indexOf(tagsRadarChart);
+        if (idx > -1) chartInstances.splice(idx, 1);
+      }
+
+      let globalTagsCount = {};
+      results.forEach(res => {
+        Object.entries(res.historicalTagsCount).forEach(([tag, count]) => {
+          globalTagsCount[tag] = (globalTagsCount[tag] || 0) + count;
+        });
       });
-    });
 
-    // 2. 根据总做题量降序排序，提取前 12 个标签名
-    const topTags = Object.keys(globalTagsCount)
-      .sort((a, b) => globalTagsCount[b] - globalTagsCount[a])
-      .slice(0, 12);
+      // 根据传入的 tagsCount 截取标签
+      const topTags = Object.keys(globalTagsCount)
+        .sort((a, b) => globalTagsCount[b] - globalTagsCount[a])
+        .slice(0, tagsCount);
 
-    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+      const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
 
-    // 3. 构建每个用户的数据集
-    const tagsDatasets = results.map((res, index) => {
-      // 按照 topTags 的顺序，提取该用户的做题量，如果没有做过就补 0
-      const dataPoints = topTags.map(tag => res.historicalTagsCount[tag] || 0);
+      const tagsDatasets = results.map((res, index) => {
+        const dataPoints = topTags.map(tag => res.historicalTagsCount[tag] || 0);
+        const bgColor = colors[index % colors.length] + '33';
+        const borderColor = colors[index % colors.length];
 
-      const bgColor = colors[index % colors.length] + '33'; // 20% 透明度
-      const borderColor = colors[index % colors.length];
+        return {
+          label: res.handle,
+          data: dataPoints,
+          backgroundColor: bgColor,
+          borderColor: borderColor,
+          pointBackgroundColor: borderColor,
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: borderColor,
+          borderWidth: 2
+        };
+      });
 
-      return {
-        label: res.handle,
-        data: dataPoints,
-        backgroundColor: bgColor,
-        borderColor: borderColor,
-        pointBackgroundColor: borderColor,
-        pointBorderColor: '#fff',
-        pointHoverBackgroundColor: '#fff',
-        pointHoverBorderColor: borderColor,
-        borderWidth: 2
-      };
-    });
-
-    chartInstances.push(new Chart(ctxTagsRadar.getContext('2d'), {
-      type: 'radar',
-      data: {
-        labels: topTags, // 外圈标签：如 math, dp, greedy 等
-        datasets: tagsDatasets
-      },
-      options: {
-        responsive: true,
-        plugins: { 
-          title: { display: true, text: '算法能力偏好 (Top 12 标签解题数)' },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return `${context.dataset.label}: 解决了 ${context.raw} 题`;
+      tagsRadarChart = new Chart(ctxTagsRadar.getContext('2d'), {
+        type: 'radar',
+        data: {
+          labels: topTags,
+          datasets: tagsDatasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false, // 允许适应外部设置的高宽
+          plugins: { 
+            title: { display: true, text: `算法能力偏好 (Top ${tagsCount} 标签解题数)` },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `${context.dataset.label}: 解决了 ${context.raw} 题`;
+                }
               }
             }
-          }
-        },
-        scales: {
-          r: {
-            angleLines: { display: true },
-            suggestedMin: 0
+          },
+          scales: {
+            r: {
+              angleLines: { display: true },
+              suggestedMin: 0
+            }
           }
         }
-      }
-    }));
+      });
+      
+      chartInstances.push(tagsRadarChart);
+    };
+
+    // 绑定更新按钮点击事件
+    const updateBtn = document.getElementById('update-tags-btn');
+    const tagsInput = document.getElementById('tags-count-input');
+    
+    if (updateBtn && tagsInput) {
+      updateBtn.addEventListener('click', () => {
+        let val = parseInt(tagsInput.value, 10);
+        if (isNaN(val) || val < 3) val = 3; // 至少显示 3 个标签才能构成多边形
+        renderTagsRadar(val);
+      });
+    }
+
+    // 初始渲染，默认读取输入框的 value (12)
+    renderTagsRadar(parseInt(document.getElementById('tags-count-input').value, 10));
   }
 }
 
