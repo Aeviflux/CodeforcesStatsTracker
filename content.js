@@ -389,7 +389,18 @@ function renderStatContent(results, days) {
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
-      <div class="cf-chart-wrapper"><canvas id="cf-chart-radar"></canvas></div>
+      <div class="cf-chart-wrapper" style="width: 100%; max-width: 100%; margin-top: 20px;">
+        <div style="text-align: center; margin-bottom: 10px;">
+          <label style="font-weight: bold; margin-right: 10px;">Rating 范围:</label>
+          <input type="number" id="radar-min-rating" value="800" step="100" style="width: 70px; padding: 4px; text-align: center;">
+          <span style="margin: 0 5px;">-</span>
+          <input type="number" id="radar-max-rating" value="1600" step="100" style="width: 70px; padding: 4px; text-align: center;">
+          <button id="update-radar-btn" style="padding: 4px 10px; margin-left: 10px; cursor: pointer; background-color: #1890ff; color: white; border: none; border-radius: 4px;">更新</button>
+        </div>
+        <div style="height: 650px; width: 100%;">
+          <canvas id="cf-chart-radar"></canvas>
+        </div>
+      </div>
       <div class="cf-chart-wrapper" style="width: 100%; max-width: 100%; margin-top: 20px;">
         <div style="text-align: center; margin-bottom: 15px;">
           <span style="font-weight: bold; margin-right: 15px; color: #333; vertical-align: middle;">时间跨度:</span>
@@ -727,70 +738,111 @@ function renderCharts(results) {
   // 图表: 历史总完成题目的 Rating 分布 (雷达图)
   const ctxRadar = document.getElementById('cf-chart-radar');
   if (ctxRadar) {
-    // 1. 收集所有用户做过的所有唯一 Rating，作为雷达图的顶点标签
-    let allRatings = new Set();
-    results.forEach(res => {
-      Object.keys(res.historicalRatingsCount).forEach(rating => {
-        allRatings.add(parseInt(rating));
+    let ratingRadarChart = null;
+
+    const renderRatingRadar = (minRating, maxRating) => {
+      // 销毁旧图表
+      if (ratingRadarChart) {
+        ratingRadarChart.destroy();
+        const idx = chartInstances.indexOf(ratingRadarChart);
+        if (idx > -1) chartInstances.splice(idx, 1);
+      }
+
+      // 1. 收集所有用户在指定 Rating 范围内的唯一分值
+      let allRatings = new Set();
+      results.forEach(res => {
+        Object.keys(res.historicalRatingsCount).forEach(rating => {
+          const r = parseInt(rating, 10);
+          if (r >= minRating && r <= maxRating) {
+            allRatings.add(r);
+          }
+        });
       });
-    });
 
-    // 2. 将 Rating 从小到大排序
-    const sortedRatings = Array.from(allRatings).sort((a, b) => a - b);
-    const radarLabels = sortedRatings.map(r => r + '分');
+      // 2. 将 Rating 从小到大排序
+      const sortedRatings = Array.from(allRatings).sort((a, b) => a - b);
+      const radarLabels = sortedRatings.map(r => r + '分');
 
-    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+      const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
 
-    // 3. 构建每个用户的数据集
-    const radarDatasets = results.map((res, index) => {
-      // 匹配对应的题数，如果在某个 Rating 没有做过题，则补 0
-      const dataPoints = sortedRatings.map(rating => {
-        return res.historicalRatingsCount[rating] || 0;
+      // 3. 构建每个用户的数据集
+      const radarDatasets = results.map((res, index) => {
+        const dataPoints = sortedRatings.map(rating => {
+          return res.historicalRatingsCount[rating] || 0;
+        });
+
+        const bgColor = colors[index % colors.length] + '33'; 
+        const borderColor = colors[index % colors.length];
+
+        return {
+          label: res.handle,
+          data: dataPoints,
+          backgroundColor: bgColor,
+          borderColor: borderColor,
+          pointBackgroundColor: borderColor,
+          pointBorderColor: '#fff',
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: borderColor,
+          borderWidth: 2
+        };
       });
 
-      // 雷达图需要较高的透明度，防止多边形互相遮挡导致内部数据不可见 (追加 '33' 表示 20% 透明度)
-      const bgColor = colors[index % colors.length] + '33'; 
-      const borderColor = colors[index % colors.length];
-
-      return {
-        label: res.handle,
-        data: dataPoints,
-        backgroundColor: bgColor,
-        borderColor: borderColor,
-        pointBackgroundColor: borderColor,
-        pointBorderColor: '#fff',
-        pointHoverBackgroundColor: '#fff',
-        pointHoverBorderColor: borderColor,
-        borderWidth: 2
-      };
-    });
-
-    chartInstances.push(new Chart(ctxRadar.getContext('2d'), {
-      type: 'radar',
-      data: {
-        labels: radarLabels,
-        datasets: radarDatasets
-      },
-      options: {
-        responsive: true,
-        plugins: { 
-          title: { display: true, text: '全量历史完成题目 Rating 分布 (多边形面积代表广度与数量)' },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return `${context.dataset.label}: 解决了 ${context.raw} 题`;
+      ratingRadarChart = new Chart(ctxRadar.getContext('2d'), {
+        type: 'radar',
+        data: {
+          labels: radarLabels,
+          datasets: radarDatasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false, // 允许适应外部设置的高宽
+          plugins: { 
+            title: { display: true, text: `全量历史完成题目 Rating 分布 (${minRating} - ${maxRating}分)` },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `${context.dataset.label}: 解决了 ${context.raw} 题`;
+                }
               }
             }
-          }
-        },
-        scales: {
-          r: {
-            angleLines: { display: true },
-            suggestedMin: 0 // 确保雷达图中心点从 0 开始
+          },
+          scales: {
+            r: {
+              angleLines: { display: true },
+              suggestedMin: 0
+            }
           }
         }
-      }
-    }));
+      });
+      
+      chartInstances.push(ratingRadarChart);
+    };
+
+    // 绑定更新按钮点击事件
+    const updateRadarBtn = document.getElementById('update-radar-btn');
+    const minInput = document.getElementById('radar-min-rating');
+    const maxInput = document.getElementById('radar-max-rating');
+
+    if (updateRadarBtn && minInput && maxInput) {
+      updateRadarBtn.addEventListener('click', () => {
+        let minVal = parseInt(minInput.value, 10) || 0;
+        let maxVal = parseInt(maxInput.value, 10) || 4000;
+        
+        // 容错处理：如果用户填反了，自动纠正
+        if (minVal > maxVal) {
+          [minVal, maxVal] = [maxVal, minVal];
+          minInput.value = minVal;
+          maxInput.value = maxVal;
+        }
+        
+        renderRatingRadar(minVal, maxVal);
+      });
+    }
+
+    // 初始渲染，读取输入框的默认值 (800 - 1600)
+    const initialMin = parseInt(document.getElementById('radar-min-rating').value, 10) || 800;
+    const initialMax = parseInt(document.getElementById('radar-max-rating').value, 10) || 1600;
+    renderRatingRadar(initialMin, initialMax);
   }
 
   // 图表: 历史完成题目趋势 (支持天/周/月/年切换)
