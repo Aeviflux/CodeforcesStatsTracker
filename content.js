@@ -270,7 +270,15 @@ function renderStatContent(results, days) {
     return `<span style="color: ${color}; font-weight: bold;">${handle}</span>`;
   };
 
-  let html = `<h2>最近 ${days} 天的数据统计</h2>
+  let html = `
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e1e1e1; padding-bottom: 10px; margin-bottom: 15px;">
+      <h2 style="border: none; padding: 0; margin: 0;">最近 ${days} 天的数据统计</h2>
+      <div>
+        <label style="font-weight: bold; font-size: 14px; color: #333;">统计天数:</label>
+        <input type="number" id="stat-days-input" value="${days}" min="1" style="width: 60px; padding: 4px; text-align: center; border: 1px solid #ccc; border-radius: 4px; margin-left: 5px;">
+        <button id="update-days-btn" style="padding: 4px 12px; margin-left: 5px; cursor: pointer; background-color: #1890ff; color: white; border: none; border-radius: 4px; transition: 0.2s;">更新</button>
+      </div>
+    </div>
     <table class="cf-stat-table">
       <thead><tr>
         <th>用户</th>
@@ -410,6 +418,23 @@ function renderStatContent(results, days) {
   `;
 
   container.innerHTML = html;
+  // 按钮事件，点击后保存天数并重新获取数据
+  const updateDaysBtn = document.getElementById('update-days-btn');
+  const daysInput = document.getElementById('stat-days-input');
+  
+  if (updateDaysBtn && daysInput) {
+    updateDaysBtn.addEventListener('click', () => {
+      const newDays = parseInt(daysInput.value, 10);
+      if (!isNaN(newDays) && newDays > 0) {
+        // 保存到插件的本地存储，然后重新调用主函数加载新数据
+        chrome.storage.local.set({ cfDays: newDays }, () => {
+          openStatPage(); 
+        });
+      } else {
+        alert("请输入有效的天数！");
+      }
+    });
+  }
   setTimeout(() => renderCharts(results), 0);
 }
 
