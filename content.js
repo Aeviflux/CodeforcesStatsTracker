@@ -129,7 +129,8 @@ async function fetchUserData(handle, cutoffTime) {
     // --- 统计全历史记录中各 Rating 的过题数 及 每日过题数 ---
     let historicalSolvedSet = new Set();
     let historicalRatingsCount = {}; 
-    let historicalDailySolved = {}; // 新增：用于存储每天的过题数量
+    let historicalDailySolved = {}; // 用于存储每天的过题数量
+    let historicalTagsCount = {}; // 用于存储各个算法标签的过题数量
 
     // 关键修改：将全量历史记录按时间从早到晚排序，确保每天过题数记录的是“首次 AC”日期
     statusRes.result.sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
@@ -141,6 +142,13 @@ async function fetchUserData(handle, cutoffTime) {
           
           if (sub.problem.rating && sub.problem.rating > 0) {
             historicalRatingsCount[sub.problem.rating] = (historicalRatingsCount[sub.problem.rating] || 0) + 1;
+          }
+
+          // 统计算法标签
+          if (sub.problem.tags && sub.problem.tags.length > 0) {
+            sub.problem.tags.forEach(tag => {
+              historicalTagsCount[tag] = (historicalTagsCount[tag] || 0) + 1;
+            });
           }
 
           // 将时间戳转化为当天的 00:00:00 本地时间戳
@@ -224,6 +232,7 @@ async function fetchUserData(handle, cutoffTime) {
       solvedCount,
       historicalSolvedCount, 
       historicalRatingsCount,
+      historicalTagsCount,
       historicalDailySolved,
       avgRating, 
       maxRating,
@@ -373,8 +382,6 @@ function renderStatContent(results, days) {
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-radar"></canvas></div>
-      
-      <!-- 更新后的带切换按钮的趋势图容器 -->
       <div class="cf-chart-wrapper" style="width: 100%; max-width: 100%; margin-top: 20px;">
         <div style="text-align: center; margin-bottom: 15px;">
           <span style="font-weight: bold; margin-right: 15px; color: #333; vertical-align: middle;">时间跨度:</span>
@@ -389,6 +396,7 @@ function renderStatContent(results, days) {
           <canvas id="cf-chart-daily-line"></canvas>
         </div>
       </div>
+      <div class="cf-chart-wrapper"><canvas id="cf-chart-tags-radar"></canvas></div>
     </div>
   `;
 
@@ -922,6 +930,73 @@ function renderCharts(results) {
 
     // 默认初始展示“月”视图
     renderLineChart('month');
+  }
+
+  // 图：算法能力雷达图 
+  const ctxTagsRadar = document.getElementById('cf-chart-tags-radar');
+  if (ctxTagsRadar) {
+    // 1. 汇总所有用户的标签数据，找出最常做的 Top 12 标签（避免雷达图太拥挤）
+    let globalTagsCount = {};
+    results.forEach(res => {
+      Object.entries(res.historicalTagsCount).forEach(([tag, count]) => {
+        globalTagsCount[tag] = (globalTagsCount[tag] || 0) + count;
+      });
+    });
+
+    // 2. 根据总做题量降序排序，提取前 12 个标签名
+    const topTags = Object.keys(globalTagsCount)
+      .sort((a, b) => globalTagsCount[b] - globalTagsCount[a])
+      .slice(0, 12);
+
+    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+
+    // 3. 构建每个用户的数据集
+    const tagsDatasets = results.map((res, index) => {
+      // 按照 topTags 的顺序，提取该用户的做题量，如果没有做过就补 0
+      const dataPoints = topTags.map(tag => res.historicalTagsCount[tag] || 0);
+
+      const bgColor = colors[index % colors.length] + '33'; // 20% 透明度
+      const borderColor = colors[index % colors.length];
+
+      return {
+        label: res.handle,
+        data: dataPoints,
+        backgroundColor: bgColor,
+        borderColor: borderColor,
+        pointBackgroundColor: borderColor,
+        pointBorderColor: '#fff',
+        pointHoverBackgroundColor: '#fff',
+        pointHoverBorderColor: borderColor,
+        borderWidth: 2
+      };
+    });
+
+    chartInstances.push(new Chart(ctxTagsRadar.getContext('2d'), {
+      type: 'radar',
+      data: {
+        labels: topTags, // 外圈标签：如 math, dp, greedy 等
+        datasets: tagsDatasets
+      },
+      options: {
+        responsive: true,
+        plugins: { 
+          title: { display: true, text: '算法能力偏好 (Top 12 标签解题数)' },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `${context.dataset.label}: 解决了 ${context.raw} 题`;
+              }
+            }
+          }
+        },
+        scales: {
+          r: {
+            angleLines: { display: true },
+            suggestedMin: 0
+          }
+        }
+      }
+    }));
   }
 }
 
