@@ -126,18 +126,29 @@ async function fetchUserData(handle, cutoffTime) {
       }
     }
 
-    // --- 统计全历史记录中各 Rating 的过题数 ---
+    // --- 统计全历史记录中各 Rating 的过题数 及 每日过题数 ---
     let historicalSolvedSet = new Set();
-    let historicalRatingsCount = {}; // 用于存储各 Rating 的数量分布
+    let historicalRatingsCount = {}; 
+    let historicalDailySolved = {}; // 新增：用于存储每天的过题数量
+
+    // 关键修改：将全量历史记录按时间从早到晚排序，确保每天过题数记录的是“首次 AC”日期
+    statusRes.result.sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
 
     statusRes.result.forEach(sub => {
       if (sub.verdict === 'OK' && sub.problem && sub.problem.name) {
         if (!historicalSolvedSet.has(sub.problem.name)) {
           historicalSolvedSet.add(sub.problem.name);
-          // 如果这道题有 Rating，则累加到对应的 Rating 统计中
+          
           if (sub.problem.rating && sub.problem.rating > 0) {
             historicalRatingsCount[sub.problem.rating] = (historicalRatingsCount[sub.problem.rating] || 0) + 1;
           }
+
+          // 将时间戳转化为当天的 00:00:00 本地时间戳
+          const dateObj = new Date(sub.creationTimeSeconds * 1000);
+          dateObj.setHours(0, 0, 0, 0);
+          const dayTime = dateObj.getTime();
+          // 累加当天的首次 AC 数量
+          historicalDailySolved[dayTime] = (historicalDailySolved[dayTime] || 0) + 1;
         }
       }
     });
@@ -213,6 +224,7 @@ async function fetchUserData(handle, cutoffTime) {
       solvedCount,
       historicalSolvedCount, 
       historicalRatingsCount,
+      historicalDailySolved,
       avgRating, 
       maxRating,
       contests: contestsSet.size, 
@@ -323,10 +335,60 @@ function renderStatContent(results, days) {
   html += `</div>`;
 
   html += `</br><h2>从注册到目前为止的数据统计</h2>
+    <style>
+      /* 新增的按钮组样式 */
+      .cf-time-toggle {
+        display: inline-flex;
+        background-color: #f0f2f5;
+        border-radius: 8px;
+        padding: 4px;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+        vertical-align: middle;
+      }
+      .cf-time-btn {
+        border: none;
+        background: transparent;
+        padding: 6px 20px;
+        margin: 0 2px;
+        border-radius: 6px;
+        color: #5c6b77;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        outline: none;
+      }
+      .cf-time-btn:hover {
+        color: #1890ff;
+      }
+      .cf-time-btn.active {
+        background-color: #ffffff;
+        color: #1890ff;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        font-weight: bold;
+      }
+    </style>
+
     <div class="cf-charts-container">
       <div class="cf-chart-wrapper"><canvas id="cf-chart-rating"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-historical-solved"></canvas></div>
       <div class="cf-chart-wrapper"><canvas id="cf-chart-radar"></canvas></div>
+      
+      <!-- 更新后的带切换按钮的趋势图容器 -->
+      <div class="cf-chart-wrapper" style="width: 100%; max-width: 100%; margin-top: 20px;">
+        <div style="text-align: center; margin-bottom: 15px;">
+          <span style="font-weight: bold; margin-right: 15px; color: #333; vertical-align: middle;">时间跨度:</span>
+          <div class="cf-time-toggle">
+            <button class="cf-time-btn" data-unit="day">天</button>
+            <button class="cf-time-btn" data-unit="week">周</button>
+            <button class="cf-time-btn active" data-unit="month">月</button>
+            <button class="cf-time-btn" data-unit="year">年</button>
+          </div>
+        </div>
+        <div style="height: 400px; width: 100%;">
+          <canvas id="cf-chart-daily-line"></canvas>
+        </div>
+      </div>
     </div>
   `;
 
@@ -687,6 +749,179 @@ function renderCharts(results) {
         }
       }
     }));
+  }
+
+  // 图表: 历史完成题目趋势 (支持天/周/月/年切换)
+  const ctxDailyLine = document.getElementById('cf-chart-daily-line');
+  if (ctxDailyLine) {
+    let historicalLineChart = null; // 用于存储当前折线图实例
+    const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#00A900'];
+
+    const renderLineChart = (unit) => {
+      // 如果已存在旧图表，先销毁掉
+      if (historicalLineChart) {
+        historicalLineChart.destroy();
+        const idx = chartInstances.indexOf(historicalLineChart);
+        if (idx > -1) chartInstances.splice(idx, 1);
+      }
+
+      // 根据当前选择的单位聚合数据
+      const aggregatedDatasets = results.map((res, index) => {
+        const bucket = {};
+        
+        Object.keys(res.historicalDailySolved).forEach(dayTsStr => {
+          const dayTs = parseInt(dayTsStr);
+          const d = new Date(dayTs);
+          let bucketTs;
+          
+          if (unit === 'year') {
+            bucketTs = new Date(d.getFullYear(), 0, 1).getTime();
+          } else if (unit === 'month') {
+            bucketTs = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+          } else if (unit === 'week') {
+            // 以周一为每周的起点聚合
+            const dayOfWeek = d.getDay();
+            const diff = d.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+            bucketTs = new Date(d.getFullYear(), d.getMonth(), diff).getTime();
+          } else {
+            bucketTs = dayTs; // 默认按天
+          }
+          
+          bucket[bucketTs] = (bucket[bucketTs] || 0) + res.historicalDailySolved[dayTs];
+        });
+
+        // 排序聚合后的时间戳
+        const sortedTimes = Object.keys(bucket).map(Number).sort((a, b) => a - b);
+        const optimizedDataPoints = [];
+
+        // 填补时间间隙的 0 值，使折线图表现真实的断层（没有做题的日子降至0）
+        for(let i = 0; i < sortedTimes.length; i++) {
+          const t = sortedTimes[i];
+          const count = bucket[t];
+          
+          if (i > 0) {
+            const prevT = sortedTimes[i-1];
+            const dPrev = new Date(prevT);
+            let expectedNextT;
+            
+            if (unit === 'year') { dPrev.setFullYear(dPrev.getFullYear()+1); expectedNextT = dPrev.getTime(); }
+            else if (unit === 'month') { dPrev.setMonth(dPrev.getMonth()+1); expectedNextT = dPrev.getTime(); }
+            else if (unit === 'week') { dPrev.setDate(dPrev.getDate()+7); expectedNextT = dPrev.getTime(); }
+            else { dPrev.setDate(dPrev.getDate()+1); expectedNextT = dPrev.getTime(); }
+
+            // 如果出现了断档，手动补充 0 值
+            if (t > expectedNextT) {
+              optimizedDataPoints.push({ x: expectedNextT, y: 0 });
+              
+              const tMinus = new Date(t);
+              if (unit === 'year') tMinus.setFullYear(tMinus.getFullYear()-1);
+              else if (unit === 'month') tMinus.setMonth(tMinus.getMonth()-1);
+              else if (unit === 'week') tMinus.setDate(tMinus.getDate()-7);
+              else tMinus.setDate(tMinus.getDate()-1);
+              
+              if (tMinus.getTime() > expectedNextT) {
+                optimizedDataPoints.push({ x: tMinus.getTime(), y: 0 });
+              }
+            }
+          }
+          optimizedDataPoints.push({ x: t, y: count });
+        }
+
+        return {
+          label: res.handle,
+          data: optimizedDataPoints,
+          borderColor: colors[index % colors.length],
+          backgroundColor: colors[index % colors.length],
+          fill: false,
+          borderWidth: 1.5,
+          pointRadius: unit === 'day' ? 0 : 3, // 天数数据密集时隐藏圆点只留线，周/月/年显示圆点
+          pointHitRadius: 5,
+          tension: 0 // 关闭曲线平滑，保持真实的单点突刺感
+        };
+      });
+
+      // 动态调整 X 轴标签格式和提示框格式
+      let xTitle = '时间 (日)';
+      let xFormat = (val) => {
+        const d = new Date(val);
+        return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      };
+      
+      if (unit === 'week') {
+        xTitle = '时间 (周)';
+        xFormat = (val) => {
+          const d = new Date(val);
+          return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} (起)`;
+        };
+      } else if (unit === 'month') {
+        xTitle = '时间 (月)';
+        xFormat = (val) => {
+          const d = new Date(val);
+          return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        };
+      } else if (unit === 'year') {
+        xTitle = '时间 (年)';
+        xFormat = (val) => new Date(val).getFullYear().toString();
+      }
+
+      historicalLineChart = new Chart(ctxDailyLine.getContext('2d'), {
+        type: 'line',
+        data: { datasets: aggregatedDatasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'nearest', intersect: false },
+          plugins: {
+            title: { display: true, text: `从注册至今完成题目数趋势 (按${xTitle.replace('时间 (', '').replace(')', '')}统计)` },
+            tooltip: {
+              callbacks: {
+                title: function(context) {
+                  if (!context.length) return '';
+                  return xFormat(context[0].raw.x);
+                },
+                label: function(context) {
+                  return `${context.dataset.label}: ${context.raw.y} 题`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: xTitle },
+              ticks: {
+                callback: function(value) { return xFormat(value); },
+                maxTicksLimit: 15
+              }
+            },
+            y: {
+              title: { display: true, text: '完成题目数' },
+              beginAtZero: true,
+              ticks: { stepSize: 1 }
+            }
+          }
+        }
+      });
+
+      chartInstances.push(historicalLineChart);
+    };
+
+    // 绑定按钮点击事件，切换 active 类名并重新渲染图表
+    const btns = document.querySelectorAll('.cf-time-btn');
+    btns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        // 移除所有按钮的激活状态
+        btns.forEach(b => b.classList.remove('active'));
+        // 为当前点击的按钮添加激活状态
+        e.target.classList.add('active');
+        
+        // 重绘图表
+        renderLineChart(e.target.dataset.unit);
+      });
+    });
+
+    // 默认初始展示“月”视图
+    renderLineChart('month');
   }
 }
 
