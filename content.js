@@ -170,6 +170,7 @@ async function fetchUserData(handle, cutoffTime) {
     // 关键修改：按时间从早到晚排序提交记录，方便获取“首次 AC”的时间
     submissions.sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
 
+    // 记录该时间段内的首次和末次提交时间 (无论是否 AC)
     const firstSubTime = submissions.length > 0 ? submissions[0].creationTimeSeconds : null;
     const lastSubTime = submissions.length > 0 ? submissions[submissions.length - 1].creationTimeSeconds : null;
 
@@ -185,7 +186,8 @@ async function fetchUserData(handle, cutoffTime) {
           rating: p.rating || 0, 
           solved: false,
           attempts: 0, // 尝试次数
-          acTime: null // AC时间戳
+          acTime: null, // AC时间戳
+          lastSubTime: null // 记录该题的最后提交时间
         });
       }
       
@@ -196,6 +198,10 @@ async function fetchUserData(handle, cutoffTime) {
       if (!probData.solved) {
           probData.attempts++;
       }
+
+      // 每次遍历到该题，都更新其最后提交时间
+      // 因为 submissions 已经是按时间从早到晚排序的，所以最后覆盖的值一定是最晚的时间
+      probData.lastSubTime = sub.creationTimeSeconds;
 
       if (sub.verdict === 'OK' && !probData.solved) {
         probData.solved = true;
@@ -321,48 +327,49 @@ function renderStatContent(results, days) {
   `;
 
   html += `<div class="cf-problem-list"><h3>详细问题列表</h3>`;
+  
+  // 提取一个通用的时间戳格式化函数
+  const formatTs = (ts) => {
+    if (!ts) return '';
+    const d = new Date(ts * 1000);
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+  };
+
   results.forEach(res => {
+    // 格式化首次和最后一次提交的时间
     let timeRangeHtml = '';
     if (res.firstSubTime && res.lastSubTime) {
-      const formatTs = (ts) => {
-        const d = new Date(ts * 1000);
-        return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-      };
       timeRangeHtml = `<span style="font-size: 13px; color: #666; margin-left: 15px; font-weight: normal;">(首次提交: ${formatTs(res.firstSubTime)}  |  最后提交: ${formatTs(res.lastSubTime)})</span>`;
     }
 
-    // 问题列表的标题也同步上色，并带上时间范围
+    // 问题列表的标题同步上色，并带上全局时间范围
     html += `<h4>${formatHandle(res.handle, res.currentRating)}${timeRangeHtml}</h4>`;
+    
     if (res.problemList.length === 0) {
       html += `<p>无记录</p>`;
     } else {
       html += `<ul>`;
       
-      // === 关键修改：按照 AC 时间从小到大排序 (已解决的在前，未解决的垫底) ===
+      // 提取用于排序的基准时间，进行统一排序
       res.problemList.sort((a, b) => {
-        if (a.solved && b.solved) return a.acTime - b.acTime; // 都 AC 了，时间早的在前面
-        if (a.solved) return -1; // a 解决了，a 放前面
-        if (b.solved) return 1;  // b 解决了，b 放前面
-        return (b.rating || 0) - (a.rating || 0); // 都没有解决，按 Rating 倒序兜底
+        // 如果题目已解决，按首次 AC 时间算；如果未解决，按最后一次提交的时间算
+        const timeA = a.solved ? a.acTime : a.lastSubTime;
+        const timeB = b.solved ? b.acTime : b.lastSubTime;
+        // 按照时间从早到晚排序（如果想让最新的在最上面，改为 timeB - timeA 即可）
+        return timeA - timeB; 
       }).forEach(p => {
         const liClass = p.solved ? 'cf-solved' : 'cf-unsolved';
         const statusText = p.solved ? '<span class="status">[解决]</span>' : '<span class="status">[未解决]</span>';
         const ratingText = p.rating > 0 ? `(Rating: ${p.rating})` : `(无Rating)`;
 
-        // 格式化尝试次数与 AC 时间
         const attemptsText = `<span style="color: #666; margin-left: 10px;">(尝试: ${p.attempts} 次)</span>`;
         let timeText = '';
+        
+        // 根据是否 AC，显示不同的时间标签和颜色
         if (p.solved && p.acTime) {
-            const dateObj = new Date(p.acTime * 1000);
-            // 格式化为 YYYY-MM-DD HH:mm
-            const year = dateObj.getFullYear();
-            const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
-            const day = dateObj.getDate().toString().padStart(2, '0');
-            const hours = dateObj.getHours().toString().padStart(2, '0');
-            const minutes = dateObj.getMinutes().toString().padStart(2, '0');
-            
-            const timeStr = `${year}-${month}-${day} ${hours}:${minutes}`;
-            timeText = `<span style="color: #00A900; margin-left: 10px;">[AC于: ${timeStr}]</span>`;
+            timeText = `<span style="color: #00A900; margin-left: 10px;">[AC于: ${formatTs(p.acTime)}]</span>`;
+        } else if (!p.solved && p.lastSubTime) {
+            timeText = `<span style="color: red; margin-left: 10px;">[最后提交于: ${formatTs(p.lastSubTime)}]</span>`;
         }
 
         html += `<li class="${liClass}">${statusText} <strong>${p.name}</strong> ${ratingText} ${attemptsText} ${timeText}</li>`;
