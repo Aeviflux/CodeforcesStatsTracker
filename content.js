@@ -170,6 +170,9 @@ async function fetchUserData(handle, cutoffTime) {
     // 关键修改：按时间从早到晚排序提交记录，方便获取“首次 AC”的时间
     submissions.sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
 
+    const firstSubTime = submissions.length > 0 ? submissions[0].creationTimeSeconds : null;
+    const lastSubTime = submissions.length > 0 ? submissions[submissions.length - 1].creationTimeSeconds : null;
+
     submissions.forEach(sub => {
       const p = sub.problem;
       if (!p || !p.name) return;
@@ -234,6 +237,8 @@ async function fetchUserData(handle, cutoffTime) {
       historicalRatingsCount,
       historicalTagsCount,
       historicalDailySolved,
+      firstSubTime,
+      lastSubTime,
       avgRating, 
       maxRating,
       contests: contestsSet.size, 
@@ -317,13 +322,29 @@ function renderStatContent(results, days) {
 
   html += `<div class="cf-problem-list"><h3>详细问题列表</h3>`;
   results.forEach(res => {
-    // 问题列表的标题也同步上色
-    html += `<h4>${formatHandle(res.handle, res.currentRating)}</h4>`;
+    let timeRangeHtml = '';
+    if (res.firstSubTime && res.lastSubTime) {
+      const formatTs = (ts) => {
+        const d = new Date(ts * 1000);
+        return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      };
+      timeRangeHtml = `<span style="font-size: 13px; color: #666; margin-left: 15px; font-weight: normal;">(首次提交: ${formatTs(res.firstSubTime)}  |  最后提交: ${formatTs(res.lastSubTime)})</span>`;
+    }
+
+    // 问题列表的标题也同步上色，并带上时间范围
+    html += `<h4>${formatHandle(res.handle, res.currentRating)}${timeRangeHtml}</h4>`;
     if (res.problemList.length === 0) {
       html += `<p>无记录</p>`;
     } else {
       html += `<ul>`;
-      res.problemList.sort((a, b) => b.rating - a.rating).forEach(p => {
+      
+      // === 关键修改：按照 AC 时间从小到大排序 (已解决的在前，未解决的垫底) ===
+      res.problemList.sort((a, b) => {
+        if (a.solved && b.solved) return a.acTime - b.acTime; // 都 AC 了，时间早的在前面
+        if (a.solved) return -1; // a 解决了，a 放前面
+        if (b.solved) return 1;  // b 解决了，b 放前面
+        return (b.rating || 0) - (a.rating || 0); // 都没有解决，按 Rating 倒序兜底
+      }).forEach(p => {
         const liClass = p.solved ? 'cf-solved' : 'cf-unsolved';
         const statusText = p.solved ? '<span class="status">[解决]</span>' : '<span class="status">[未解决]</span>';
         const ratingText = p.rating > 0 ? `(Rating: ${p.rating})` : `(无Rating)`;
