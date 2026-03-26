@@ -187,7 +187,8 @@ async function fetchUserData(handle, cutoffTime) {
           solved: false,
           attempts: 0, // 尝试次数
           acTime: null, // AC时间戳
-          lastSubTime: null // 记录该题的最后提交时间
+          lastSubTime: null, // 记录该题的最后提交时间
+          tags: p.tags || [] // 保存这道题的算法标签
         });
       }
       
@@ -372,7 +373,23 @@ function renderStatContent(results, days) {
             timeText = `<span style="color: red; margin-left: 10px;">[最后提交于: ${formatTs(p.lastSubTime)}]</span>`;
         }
 
-        html += `<li class="${liClass}">${statusText} <strong>${p.name}</strong> ${ratingText} ${attemptsText} ${timeText}</li>`;
+        // 生成算法标签的 HTML
+        let tagsHtml = '';
+        if (p.tags && p.tags.length > 0) {
+          // 为每个标签生成一个带背景色的圆角小方块
+          const tagsSpans = p.tags.map(tag => 
+            `<span style="display: inline-block; padding: 2px 6px; margin: 4px 4px 0 0; font-size: 11px; background-color: #e4e6e8; color: #3c4146; border-radius: 4px;">${tag}</span>`
+          ).join('');
+          
+          // 使用 padding-left 让标签对齐到题目名称下方（预留出状态标签的宽度）
+          tagsHtml = `<div style="padding-left: 45px;">${tagsSpans}</div>`;
+        }
+
+        // 将题目信息和标签包裹在 li 中
+        html += `<li class="${liClass}" style="padding-bottom: 8px;">
+                   <div>${statusText} <strong>${p.name}</strong> ${ratingText} ${attemptsText} ${timeText}</div>
+                   ${tagsHtml}
+                 </li>`;
       });
       html += `</ul>`;
     }
