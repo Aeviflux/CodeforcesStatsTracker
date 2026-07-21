@@ -64,3 +64,14 @@
 .cf-solved span.status { color: #00a900; font-weight: bold; }
 .cf-unsolved { border-left-color: red !important; }
 .cf-unsolved span.status { color: red; }
+
+/* 可折叠的用户标题 */
+.cf-problem-user-header:hover {
+  color: #1890ff;
+}
+
+.cf-toggle-arrow {
+  font-size: 12px;
+  display: inline-block;
+  width: 14px;
+}

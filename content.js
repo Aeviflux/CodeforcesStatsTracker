@@ -336,16 +336,24 @@ function renderStatContent(results, days) {
     return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
+  let problemUserIndex = 0;
+
   results.forEach(res => {
+    const puid = `cf-problem-user-${problemUserIndex}`;
+    problemUserIndex++;
     // 格式化首次和最后一次提交的时间
     let timeRangeHtml = '';
     if (res.firstSubTime && res.lastSubTime) {
       timeRangeHtml = `<span style="font-size: 13px; color: #666; margin-left: 15px; font-weight: normal;">(首次提交: ${formatTs(res.firstSubTime)}  |  最后提交: ${formatTs(res.lastSubTime)})</span>`;
     }
 
-    // 问题列表的标题同步上色，并带上全局时间范围
-    html += `<h4>${formatHandle(res.handle, res.currentRating)}${timeRangeHtml}</h4>`;
-    
+    // 问题列表的标题同步上色，并带上全局时间范围（可点击折叠）
+    html += `<h4 class="cf-problem-user-header" data-target="${puid}" style="cursor: pointer;">
+      <span class="cf-toggle-arrow" id="${puid}-arrow">▼</span> ${formatHandle(res.handle, res.currentRating)}${timeRangeHtml}
+    </h4>`;
+
+    html += `<div class="cf-problem-user-body" id="${puid}">`;
+
     if (res.problemList.length === 0) {
       html += `<p>无记录</p>`;
     } else {
@@ -393,6 +401,7 @@ function renderStatContent(results, days) {
       });
       html += `</ul>`;
     }
+    html += `</div>`; // 关闭 cf-problem-user-body
   });
   html += `</div>`;
 
@@ -474,6 +483,25 @@ function renderStatContent(results, days) {
   `;
 
   container.innerHTML = html;
+
+  // 绑定详细问题列表折叠/展开事件
+  container.querySelectorAll('.cf-problem-user-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const targetId = header.dataset.target;
+      const body = document.getElementById(targetId);
+      const arrow = document.getElementById(targetId + '-arrow');
+      if (body && arrow) {
+        if (body.style.display === 'none') {
+          body.style.display = 'block';
+          arrow.textContent = '▼';
+        } else {
+          body.style.display = 'none';
+          arrow.textContent = '▶';
+        }
+      }
+    });
+  });
+
   // 按钮事件，点击后保存天数并重新获取数据
   const updateDaysBtn = document.getElementById('update-days-btn');
   const daysInput = document.getElementById('stat-days-input');
