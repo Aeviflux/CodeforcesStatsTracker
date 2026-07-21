@@ -320,14 +320,19 @@ async function openContestsPage() {
     const handlesStr = result.cfHandles || 'tourist';
     const handles = handlesStr.split(',').map(h => h.trim()).filter(h => h.length > 0);
 
-    // 拉取全部比赛列表，建立 contestId -> contestName 的映射
+    // 拉取全部比赛列表（含 Gym），建立 contestId -> contestName 的映射
     const contestMap = {};
     try {
-      const contestListRes = await fetch('https://codeforces.com/api/contest.list').then(r => r.json());
-      if (contestListRes.status === 'OK') {
-        contestListRes.result.forEach(c => {
-          contestMap[c.id] = c.name;
-        });
+      // 同时拉取普通比赛和 Gym 比赛
+      const [normalRes, gymRes] = await Promise.all([
+        fetch('https://codeforces.com/api/contest.list').then(r => r.json()),
+        fetch('https://codeforces.com/api/contest.list?gym=true').then(r => r.json())
+      ]);
+      if (normalRes.status === 'OK') {
+        normalRes.result.forEach(c => { contestMap[c.id] = c.name; });
+      }
+      if (gymRes.status === 'OK') {
+        gymRes.result.forEach(c => { contestMap[c.id] = c.name; });
       }
     } catch (err) {
       console.warn('Failed to fetch contest list:', err);
