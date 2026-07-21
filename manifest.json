@@ -26,8 +26,8 @@
   "content_scripts": [
     {
       "matches": ["*://codeforces.com/*", "*://www.codeforces.com/*"],
-      "js": ["chart.js", "content.js"],
-      "css": ["content.css"]
+      "js": ["chart.js", "content.js", "contests.js"],
+      "css": ["content.css", "contests.css"]
     }
   ]
 }

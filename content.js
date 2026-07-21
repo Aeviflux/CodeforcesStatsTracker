@@ -9,7 +9,7 @@ function injectStatButton() {
 
   const statLi = document.createElement('li');
   // 关键修改：加入 style="color: red; font-weight: bold;" 
-  statLi.innerHTML = `<a href="javascript:void(0);" id="cf-stat-btn" style="color: red; font-weight: bold;">STAT</a>`;
+  statLi.innerHTML = `<a href="javascript:void(0);" id="cf-stat-btn" style="color: red; font-weight: bold;">STATS</a>`;
   menuList.appendChild(statLi);
 
   document.getElementById('cf-stat-btn').addEventListener('click', (e) => {
