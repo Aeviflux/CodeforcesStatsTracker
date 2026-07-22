@@ -71,6 +71,7 @@ async function fetchUserContestData(handle, contestMap) {
     const submissions = statusRes.result;
     const ratingHistory = ratingRes.status === 'OK' ? ratingRes.result : [];
     const currentRating = ratingHistory.length > 0 ? ratingHistory[ratingHistory.length - 1].newRating : 0;
+    const maxRating = ratingHistory.length > 0 ? Math.max(...ratingHistory.map(r => r.newRating)) : 0;
 
     // 按时间从早到晚排序
     submissions.sort((a, b) => a.creationTimeSeconds - b.creationTimeSeconds);
@@ -147,6 +148,7 @@ async function fetchUserContestData(handle, contestMap) {
     return {
       handle,
       currentRating,
+      maxRating,
       contestRecords
     };
   } catch (e) {
@@ -177,7 +179,7 @@ function renderContestsPage(results) {
     const styledHandle = formatHandle(res.handle, res.currentRating);
     html += `<h3 class="cf-contests-user-header" data-target="${uid}" style="cursor: pointer;">
       <span class="cf-toggle-arrow" id="${uid}-arrow">▼</span> ${styledHandle}
-      <span style="font-size: 13px; color: #666; margin-left: 10px; font-weight: normal;">(${res.contestRecords.length} 场比赛)</span>
+      <span style="font-size: 13px; color: #666; margin-left: 10px; font-weight: normal;">(${res.contestRecords.length} 场比赛 | 最高Rating: ${res.maxRating || 0} | 当前Rating: ${res.currentRating || 0})</span>
     </h3>`;
 
     html += `<div class="cf-contests-user-body" id="${uid}">`;
